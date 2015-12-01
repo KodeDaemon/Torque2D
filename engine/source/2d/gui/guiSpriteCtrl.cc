@@ -36,10 +36,6 @@
 #include "graphics/dgl.h"
 #endif
 
-#ifndef _RENDER_PROXY_H_
-#include "2d/core/RenderProxy.h"
-#endif
-
 #include "guiSpriteCtrl_ScriptBindings.h"
 
 //-----------------------------------------------------------------------------
@@ -49,24 +45,22 @@ IMPLEMENT_CONOBJECT(GuiSpriteCtrl);
 //-----------------------------------------------------------------------------
 
 GuiSpriteCtrl::GuiSpriteCtrl( void ) :
-    mImageAssetId( StringTable->EmptyString ),
-    mAnimationAssetId( StringTable->EmptyString ),
-    mImageFrame( 0 ),
-    mAnimationPaused( false ),
-    mpAnimationController(NULL)
+    mImageAssetId(StringTable->EmptyString),
+    mImageFrameId(0),
+    mNamedImageFrameId(StringTable-> EmptyString),
+    mAnimationAssetId(StringTable->EmptyString)
 {
+    // Set to self ticking.
+    mSelfTick = true;
+    
+    // Default to static provider.
+    mStaticProvider = true;
 }
 
 //-----------------------------------------------------------------------------
 
 GuiSpriteCtrl::~GuiSpriteCtrl()
 {
-    // Destroy animation controller if required.
-    if ( mpAnimationController != NULL )
-    {
-        delete mpAnimationController;
-        mpAnimationController = NULL;
-    }
 }
 
 //-----------------------------------------------------------------------------
@@ -76,9 +70,37 @@ void GuiSpriteCtrl::initPersistFields()
     // Call parent.
     Parent::initPersistFields();
 
-    addProtectedField( "Image", TypeAssetId, Offset(mImageAssetId, GuiSpriteCtrl), &setImage, &getImage, &writeImage, "The image asset Id used for the image." );
-    addProtectedField( "Frame", TypeS32, Offset(mImageFrame, GuiSpriteCtrl), &setImageFrame, &defaultProtectedGetFn, &writeImageFrame, "The image frame used for the image." );
-    addProtectedField( "Animation", TypeAssetId, Offset(mAnimationAssetId, GuiSpriteCtrl), &setAnimation, &getAnimation, &writeAnimation, "The animation to use.");
+    addProtectedField("Image", TypeAssetId, Offset(mImageAssetId, GuiSpriteCtrl), &setImage, &defaultProtectedGetFn, &writeImage, "The image asset Id used for the image.");
+    addProtectedField("Frame", TypeS32, Offset(mImageFrameId, GuiSpriteCtrl), &setImageFrame, &defaultProtectedGetFn, &writeImageFrame, "The image frame used for the image.");
+    addProtectedField("NamedFrame", TypeString, Offset(mNamedImageFrameId, GuiSpriteCtrl), &setNamedImageFrame, &defaultProtectedGetFn, &writeNamedImageFrame, "The named image frame used for the image");
+    addProtectedField("Animation", TypeAssetId, Offset(mAnimationAssetId, GuiSpriteCtrl), &setAnimation, &defaultProtectedGetFn, &writeAnimation, "The animation to use.");
+}
+
+//------------------------------------------------------------------------------
+
+void GuiSpriteCtrl::copyTo(SimObject* object)
+{
+    // Call to parent.
+    Parent::copyTo(object);
+
+    // Cast to control.
+    GuiSpriteCtrl* pGuiSpriteCtrl = static_cast<GuiSpriteCtrl*>(object);
+
+    // Sanity!
+    AssertFatal(pGuiSpriteCtrl != NULL, "GuiSpriteCtrl::copyTo() - Object is not the correct type.");
+
+    // Copy asset fields.
+    if ( mImageAssetId != StringTable->EmptyString )
+    {
+        if ( !isUsingNamedImageFrame() )
+            pGuiSpriteCtrl->setImage( getImage(), getImageFrame() );
+        else
+            pGuiSpriteCtrl->setImage( getImage(), getNamedImageFrame() ); 
+    }
+    else if ( mAnimationAssetId != StringTable->EmptyString )
+    {
+        pGuiSpriteCtrl->setAnimation( getAnimation() );
+    }
 }
 
 //-----------------------------------------------------------------------------
@@ -90,27 +112,28 @@ bool GuiSpriteCtrl::onWake()
         return false;
 
     // Are we in static mode?
-    if ( isStaticMode() )
+    if ( mImageAssetId != StringTable->EmptyString )
     {
-        // Set image asset if it's valid.
-        if ( mImageAssetId != StringTable->EmptyString )
-            mImageAsset = mImageAssetId;
+        if ( mNamedImageFrameId != StringTable->EmptyString)
+        {
+            // Set the image asset and named frame
+            ImageFrameProvider::setImage( mImageAssetId, mNamedImageFrameId );
+        }
+        else
+        {
+            // Set image asset and numerical frame.
+            ImageFrameProvider::setImage( mImageAssetId, mImageFrameId );
+        }
+    }
+    else if ( mAnimationAssetId != StringTable->EmptyString )
+    {
+        // Play animation asset.
+        ImageFrameProvider::setAnimation( mAnimationAssetId );
     }
     else
     {
-        // Set animation asset if it's valid.
-        if ( mAnimationAssetId != StringTable->EmptyString )
-        {
-            // Create animation controller if required.
-            if ( mpAnimationController == NULL )
-                mpAnimationController = new AnimationController();
-
-            // Play animation.
-            mpAnimationController->playAnimation( mAnimationAssetId, false );
-
-            // Turn-on tick processing.
-            setProcessTicks( true );
-        }
+        // Not good, so warn.
+        Con::warnf("GuiSpriteCtrl::onWake() - No Image or Animation Asset defined.");
     }
 
     return true;
@@ -121,275 +144,178 @@ bool GuiSpriteCtrl::onWake()
 void GuiSpriteCtrl::onSleep()
 {
     // Clear assets.
-    mImageAsset.clear();
-
-    // Destroy animation controller if required.
-    if ( mpAnimationController != NULL )
-    {
-        delete mpAnimationController;
-        mpAnimationController = NULL;
-    }    
-
-    // Turn-off tick processing.
-    setProcessTicks( false );
+    ImageFrameProvider::clearAssets();
 
     // Call parent.
     Parent::onSleep();
 }
 
-//------------------------------------------------------------------------------
-
-void GuiSpriteCtrl::processTick( void )
-{
-    // Are we in static mode?
-    if ( isStaticMode() )
-    {
-        // Yes, so turn-off tick processing.
-        setProcessTicks( false );
-
-        return;
-    }
-
-    // Finish if no animation controller.
-    if ( mpAnimationController == NULL )
-        return;
-
-    // Finish if the animation has finished.
-    if ( mpAnimationController->isAnimationFinished() )
-        return;
-
-    // Finish if animation is paused.
-    if ( mAnimationPaused )
-        return;
-
-    // Update the animation.
-    mpAnimationController->updateAnimation( Tickable::smTickSec );
-
-    // Finish if the animation has not finished.
-    if ( !mpAnimationController->isAnimationFinished() )
-        return;
-
-    // Turn-off tick processing.
-    setProcessTicks( false );
-}
-
 //-----------------------------------------------------------------------------
 
-void GuiSpriteCtrl::setImage( const char* pImageAssetId )
+bool GuiSpriteCtrl::setImage( const char* pImageAssetId, const U32 frame )
 {
     // Sanity!
     AssertFatal( pImageAssetId != NULL, "Cannot use a NULL asset Id." );
 
+    // Reset animation.
+    if ( mAnimationAssetId != StringTable->EmptyString )
+        mAnimationAssetId = StringTable->EmptyString;
+
     // Fetch the asset Id.
-    mImageAssetId = StringTable->insert(pImageAssetId);
+    if ( mImageAssetId != pImageAssetId )
+        mImageAssetId = StringTable->insert(pImageAssetId);
 
-    // Reset image frame.
-    mImageFrame = 0;
+    // Set the image frame if the image asset was set.
+    if ( mImageAssetId != StringTable->EmptyString )
+        setImageFrame(frame);
 
-    // Assign asset if awake.
-    if ( isAwake() )
-        mImageAsset = mImageAssetId;
-    
-    // Set static mode.
-    mStaticMode = true;
+    // Finish if not awake.
+    if ( !isAwake() )
+        return true;
+
+    // Call parent.
+    if ( !ImageFrameProvider::setImage(pImageAssetId, frame) )
+        return false;
+
+    // Update control.
+    setUpdate();
+
+    return true;
+}
+
+//-----------------------------------------------------------------------------
+
+bool GuiSpriteCtrl::setImage( const char* pImageAssetId, const char* pNamedFrame )
+{
+    // Sanity!
+    AssertFatal( pImageAssetId != NULL, "Cannot use a NULL asset Id." );
 
     // Reset animation.
-    mAnimationAssetId = StringTable->EmptyString;
+    if ( mAnimationAssetId != StringTable->EmptyString )
+        mAnimationAssetId = StringTable->EmptyString;
 
-    // Destroy animation controller if required.
-    if ( mpAnimationController != NULL )
+    // Fetch the asset Id.
+    if ( mImageAssetId != pImageAssetId )
+        mImageAssetId = StringTable->insert(pImageAssetId);
+
+    // Set the image frame if the image asset was set.
+    if ( mImageAssetId != StringTable->EmptyString )
+        setNamedImageFrame(pNamedFrame);
+
+    // Finish if not awake.
+    if ( !isAwake() )
+        return true;
+
+    // Call parent.
+    if ( !ImageFrameProvider::setImage(pImageAssetId, pNamedFrame) )
+        return false;
+
+    // Update control.
+    setUpdate();
+
+    return true;
+}
+
+//-----------------------------------------------------------------------------
+
+bool GuiSpriteCtrl::setImageFrame( const U32 frame )
+{
+    // Check Existing Image.
+    if ( mImageAssetId == StringTable->EmptyString )
     {
-        delete mpAnimationController;
-        mpAnimationController = NULL;
+        // Warn.
+        Con::warnf("GuiSpriteCtrl::setImageFrame() - Cannot set frame without existing asset Id.");
+
+        // Return Here.
+        return false;
     }
 
+    // Set frame.
+    mImageFrameId = frame;
+
+    // Finish if not awake.
+    if ( !isAwake() )
+        return true;
+
+    // Call parent.
+    if ( !ImageFrameProvider::setImageFrame(frame) )
+        return false;
+
     // Update control.
     setUpdate();
+
+    return true;
 }
 
 //-----------------------------------------------------------------------------
 
-void GuiSpriteCtrl::setImageFrame( const U32 imageFrame )
+bool GuiSpriteCtrl::setNamedImageFrame( const char* pNamedFrame )
 {
-    // Set image frame.
-    mImageFrame = imageFrame;
+    // Check Existing Image.
+    if ( mImageAssetId == StringTable->EmptyString )
+    {
+        // Warn.
+        Con::warnf("GuiSpriteCtrl::setNamedImageFrame() - Cannot set named frame without existing asset Id.");
+
+        // Return Here.
+        return false;
+    }
+
+    // Set named frame.
+    mNamedImageFrameId = StringTable->insert(pNamedFrame);
+
+    // Finish if not awake.
+    if ( !isAwake() )
+        return true;
+
+    // Call parent.
+    if ( !ImageFrameProvider::setNamedImageFrame(pNamedFrame) )
+        return false;
 
     // Update control.
     setUpdate();
+
+    return true;
 }
 
 //-----------------------------------------------------------------------------
 
-void GuiSpriteCtrl::setAnimation( const char* pAnimationAssetId )
+bool GuiSpriteCtrl::setAnimation( const char* pAnimationAssetId )
 {
     // Sanity!
     AssertFatal( pAnimationAssetId != NULL, "Cannot use a NULL asset Id." );
 
-    // Fetch the asset Id.
-    mAnimationAssetId = StringTable->insert(pAnimationAssetId);
-
     // Reset the image asset Id.
-    mImageAssetId = StringTable->EmptyString;
+    if ( mImageAssetId != StringTable->EmptyString )
+        mImageAssetId = StringTable->EmptyString;
 
-    // Reset image frame.
-    mImageFrame = 0;
+    // Fetch the asset Id.
+    if ( mAnimationAssetId != pAnimationAssetId )
+        mAnimationAssetId = StringTable->insert(pAnimationAssetId);
 
-    // Reset static mode.
-    mStaticMode = false;
-
-    // Assign asset if awake.
-    if ( isAwake() )
-    {
-        // Set animation asset if it's valid.
-        if ( mAnimationAssetId != StringTable->EmptyString )
-        {
-            // Create animation controller if required.
-            if ( mpAnimationController == NULL )
-                mpAnimationController = new AnimationController();
-
-            // Play animation.
-            mpAnimationController->playAnimation( mAnimationAssetId, false );
-
-            // Turn-on tick processing.
-            setProcessTicks( true );
-        }
-    }
-}
-
-//-----------------------------------------------------------------------------
-
-void GuiSpriteCtrl::play(void)
-{
-    // Sanity!
-    if (mStaticMode)
-        return;
-
-    // Reset animation pause.
-    mAnimationPaused = false;
-
-    // Assign asset if awake.
-    if ( isAwake() )
-    {
-        // Set animation asset if it's valid.
-        if ( mAnimationAssetId != StringTable->EmptyString )
-        {
-            // Play animation.
-            mpAnimationController->playAnimation( mAnimationAssetId, false );
-
-            // Turn-on tick processing.
-            setProcessTicks( true );
-        }
-    }
-}
-
-//-----------------------------------------------------------------------------
-
-void GuiSpriteCtrl::pause(bool flag)
-{
     // Finish if not awake.
     if ( !isAwake() )
-        return;
+        return true;
 
-    // Finish if no animation.
-    if ( mpAnimationController == NULL )
-        return;
+    // Play animation asset if it's valid.
+    if ( mAnimationAssetId != StringTable->EmptyString )
+        ImageFrameProvider::setAnimation( mAnimationAssetId );
 
-    // Pause the animation.
-    mAnimationPaused = flag;
-}
-
-//-----------------------------------------------------------------------------
-
-void GuiSpriteCtrl::stop(void)
-{
-    // Finish if not awake.
-    if ( !isAwake() )
-        return;
-
-    // Finish if no animation.
-    if ( mpAnimationController == NULL )
-        return;
-
-    // Stop the animation.
-    mAnimationPaused = false;
-    mpAnimationController->stopAnimation();
+    return true;
 }
 
 //-----------------------------------------------------------------------------
 
 void GuiSpriteCtrl::onRender( Point2I offset, const RectI &updateRect)
 {
-    // Are we in static mode?
-    if ( isStaticMode() )
-    {
-        // Do we have a valid image to render?
-        if ( mImageAsset.notNull() && mImageAsset->isAssetValid() && mImageFrame < mImageAsset->getFrameCount() )
-        {
-            // Yes, so calculate source region.
-            const ImageAsset::FrameArea::PixelArea& pixelArea = mImageAsset->getImageFrameArea( mImageFrame ).mPixelArea;
-            RectI sourceRegion( pixelArea.mPixelOffset, Point2I(pixelArea.mPixelWidth, pixelArea.mPixelHeight) );
-
-            // Calculate destination region.
-            RectI destinationRegion(offset, mBounds.extent);
-
-            // Render image.
-            dglSetBitmapModulation( mProfile->mFillColor );
-            dglDrawBitmapStretchSR( mImageAsset->getImageTexture(), destinationRegion, sourceRegion );
-            dglClearBitmapModulation();
-        }
-        else
-        {
-            // No, so render no-image render-proxy.
-            renderNoImage( offset, updateRect );
-        }
-    }
-    else
-    {
-        // Do we have a valid animation to render?
-        if ( mpAnimationController != NULL && mpAnimationController->isAnimationValid() )
-        {
-            // Yes, so calculate source region.
-            const ImageAsset::FrameArea::PixelArea& pixelArea = mpAnimationController->getCurrentImageFrameArea().mPixelArea;
-            RectI sourceRegion( pixelArea.mPixelOffset, Point2I(pixelArea.mPixelWidth, pixelArea.mPixelHeight) );
-
-            // Calculate destination region.
-            RectI destinationRegion(offset, mBounds.extent);
-
-            // Render animation image.
-            dglSetBitmapModulation( mProfile->mFillColor );
-            dglDrawBitmapStretchSR( mpAnimationController->getImageTexture(), destinationRegion, sourceRegion );
-            dglClearBitmapModulation();
-
-            // Update control.
-            setUpdate();
-        }
-        else
-        {
-            // No, so render no-image render-proxy.
-            renderNoImage( offset, updateRect );
-        }
-    }
-
-    // Render child controls.
-    renderChildControls(offset, updateRect);
+    // Call parent.
+    ImageFrameProvider::renderGui( *this, offset, updateRect );
 }
 
 //------------------------------------------------------------------------------
 
-void GuiSpriteCtrl::renderNoImage( Point2I &offset, const RectI& updateRect )
+void GuiSpriteCtrl::onAnimationEnd( void )
 {
-    // Fetch the 'cannot render' proxy.
-    RenderProxy* pNoImageRenderProxy = Sim::findObject<RenderProxy>( CANNOT_RENDER_PROXY_NAME );
-
-    // Finish if no render proxy available or it can't render.
-    if ( pNoImageRenderProxy == NULL || !pNoImageRenderProxy->validRender() )
-        return;
-
-    // Render using render-proxy.
-    pNoImageRenderProxy->renderGui( *this, offset, updateRect );
-
-    // Update control.
-    setUpdate();
+    // Clear assets.
+    ImageFrameProvider::clearAssets();
 }
-
-

@@ -42,9 +42,17 @@ function FaceObjectBehavior::updateFace(%this)
         return;
    
     %origin = %this.owner.getPosition();
-    %angle = -mRadToDeg( mAtan( getWord(%this.target.getPosition(),0)-getWord(%origin,0), getWord(%this.target.getPosition(),1)-getWord(%origin,1) ) );
+    %angle = mAtan( Vector2Sub( %this.target.getPosition(), %origin ) );
     
-    %this.owner.rotateTo(%angle, %this.turnSpeed);
+    if ( %this.turnSpeed > 0.0 )
+    {
+        %this.owner.rotateTo(%angle, %this.turnSpeed);
+    }
+    else
+    {
+        %this.owner.setAngle(%angle);
+    }
+    
       
     %this.schedule(200, updateFace);
 }

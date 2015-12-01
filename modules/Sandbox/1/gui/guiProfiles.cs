@@ -20,8 +20,18 @@
 // IN THE SOFTWARE.
 //-----------------------------------------------------------------------------
 
-$platformFontType = ($platform $= "windows") ? "lucida console" : "monaco";
-$platformFontSize = ($platform $= "ios") ? 18 : 12;
+if ($platform $= "windows")
+	$platformFontType = "lucida console";
+else if ($platform $= "Android")
+	$platformFontType = "Droid";
+else
+	$platformFontType = "monaco";
+if ($platform $= "ios")
+	$platformFontSize = 18;
+else if ($platform $= "Android")
+	$platformFontSize = 14;
+else
+	$platformFontSize = 12;
 
 //-----------------------------------------------------------------------------
 
@@ -284,6 +294,19 @@ if(!isObject(GuiScrollProfile)) new GuiControlProfile (GuiScrollProfile)
     borderThickness = 2;
     bitmap = "^Sandbox/gui/images/scrollBar.png";
     hasBitmapArray = true;
+};
+
+//-----------------------------------------------------------------------------
+
+if(!isObject(GuiTransparentScrollProfile)) new GuiControlProfile (GuiTransparentScrollProfile)
+{
+   opaque = false;
+   fillColor = "255 255 255";
+   border = false;
+   borderThickness = 2;
+   borderColor = "0 0 0";
+   bitmap = "^Sandbox/gui/images/scrollBar.png";
+   hasBitmapArray = true;
 };
 
 //-----------------------------------------------------------------------------

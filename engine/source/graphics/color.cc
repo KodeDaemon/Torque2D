@@ -24,6 +24,8 @@
 #include "console/console.h"
 #include "console/consoleTypes.h"
 
+#include "color_ScriptBinding.h"
+
 #ifndef _STRINGUNIT_H_
 #include "string/stringUnit.h"
 #endif
@@ -45,35 +47,6 @@ static typeColorFToNameHash    mColorFToName;
 static typeColorIToNameHash    mColorIToName;
 
 #define DEFAULT_UNKNOWN_STOCK_COLOR_NAME    "White"
-
-//-----------------------------------------------------------------------------
-
-class StockColorItem
-{
-private:
-    StockColorItem() {}
-
-public:
-    StockColorItem( const char* pName, const U8 red, const U8 green, const U8 blue, const U8 alpha = 255 )
-    {
-        // Sanity!
-        AssertFatal( pName != NULL, "Stock color name cannot be NULL." );
-
-        // Set stock color.
-        // NOTE:-   We'll use the char pointer here.  We can yet use the string-table unfortunately.
-        mColorName = pName;
-        mColorI.set( red, green, blue, alpha );
-        mColorF = mColorI;
-    }
-
-    inline const char*      getColorName( void ) const { return mColorName; }
-    inline const ColorF&    getColorF( void ) const { return mColorF; }
-    inline const ColorI&    getColorI( void ) const { return mColorI; }
-
-    const char*         mColorName;
-    ColorF              mColorF;
-    ColorI              mColorI;
-};
 
 //-----------------------------------------------------------------------------
 
@@ -368,6 +341,32 @@ StringTableEntry StockColor::name( const ColorI& color )
 
 //-----------------------------------------------------------------------------
 
+S32 StockColor::getCount( void )
+{
+    return sizeof(StockColorTable) / sizeof(StockColorItem);
+}
+
+//-----------------------------------------------------------------------------
+
+const StockColorItem* StockColor::getColorItem( const S32 index )
+{
+    // Fetch stock color count.
+    const S32 stockColorCount = StockColor::getCount();
+
+    // Is the stock color index in range?
+    if ( index < 0 || index >= stockColorCount )
+    {
+        // No, so warn.
+        Con::warnf("StockColor::getName() - Specified color index '%d' is out of range.  Range is 0 to %d.", index, stockColorCount-1 );
+        return NULL;
+    }
+
+    // Return color name.
+    return &(StockColorTable[index]);
+}
+
+//-----------------------------------------------------------------------------
+
 ColorF::ColorF( const char* pStockColorName )
 {
     // Set stock color.
@@ -577,91 +576,3 @@ ConsoleSetType( TypeColorI )
         Con::printf("Color must be set as { r, g, b [,a] }, { r g b [b] }  or { stockColorName }");
 }
 
-//-----------------------------------------------------------------------------
-
-ConsoleFunction( getStockColorCount, S32, 1, 1, "() - Gets a count of available stock colors.\n"
-                                                "@return A count of available stock colors." )
-{
-    return sizeof(StockColorTable) / sizeof(StockColorItem);
-}
-
-//-----------------------------------------------------------------------------
-
-ConsoleFunction( getStockColorName, const char*, 2, 2,  "(stockColorIndex) - Gets the stock color name at the specified index.\n"
-                                                        "@param stockColorIndex The zero-based index of the stock color name to retrieve.\n"
-                                                        "@return The stock color name at the specified index or nothing if the string is invalid." )
-{
-    // Fetch stock color index.
-    const S32 stockColorIndex = dAtoi(argv[1]);
-
-    // Fetch stock color count.
-    const S32 stockColorCount = sizeof(StockColorTable) / sizeof(StockColorItem);
-
-    // Is the stock color index in range?
-    if ( stockColorIndex < 0 || stockColorIndex >= stockColorCount )
-    {
-        // No, so warn.
-        Con::warnf("getStockColorName() - Specified color index '%d' is out of range.  Range is 0 to %d.", stockColorIndex, stockColorCount-1 );
-        return StringTable->EmptyString;
-    }
-
-    // Return color name.
-    return StockColorTable[stockColorIndex].getColorName();
-}
-
-//-----------------------------------------------------------------------------
-
-ConsoleFunction( isStockColor, bool, 2, 2,  "(stockColorName) - Gets whether the specified name is a stock color or not.\n"
-                                            "@param stockColorName - The stock color name to test for.\n"
-                                            "@return Whether the specified name is a stock color or not.\n" )
-{
-    // Fetch stock color name.
-    const char* pStockColorName = argv[1];
-
-    // Return whether this is a stock color name or not.
-    return StockColor::isColor( pStockColorName );
-}
-
-//-----------------------------------------------------------------------------
-
-ConsoleFunction( getStockColorF, const char*, 2, 2, "(stockColorName) - Gets a floating-point-based stock color by name.\n"
-                                                    "@param stockColorName - The stock color name to retrieve.\n"
-                                                    "@return The stock color that matches the specified color name.  Returns nothing if the color name is not found.\n" )
-{
-    // Fetch stock color name.
-    const char* pStockColorName = argv[1];
-
-    // Return nothing if stock color name is invalid.
-    if ( !StockColor::isColor( pStockColorName ) )
-        return StringTable->EmptyString;
-
-    // Fetch stock color.
-    const ColorF& color = StockColor::colorF( pStockColorName );
-
-    // Format stock color.
-    char* returnBuffer = Con::getReturnBuffer(256);
-    dSprintf(returnBuffer, 256, "%g %g %g %g", color.red, color.green, color.blue, color.alpha);
-    return(returnBuffer);
-}
-
-//-----------------------------------------------------------------------------
-
-ConsoleFunction( getStockColorI, const char*, 2, 2, "(stockColorName) - Gets a byte-based stock color by name.\n"
-                                                    "@param stockColorName - The stock color name to retrieve.\n"
-                                                    "@return The stock color that matches the specified color name.  Returns nothing if the color name is not found.\n" )
-{
-    // Fetch stock color name.
-    const char* pStockColorName = argv[1];
-
-    // Return nothing if stock color name is invalid.
-    if ( !StockColor::isColor( pStockColorName ) )
-        return StringTable->EmptyString;
-
-    // Fetch stock color.
-    const ColorI& color = StockColor::colorI( pStockColorName );
-
-    // Format stock color.
-    char* returnBuffer = Con::getReturnBuffer(256);
-    dSprintf(returnBuffer, 256, "%d %d %d %d", color.red, color.green, color.blue, color.alpha);
-    return(returnBuffer);
-}

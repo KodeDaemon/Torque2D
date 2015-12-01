@@ -532,16 +532,6 @@ GuiInspectorGroup::~GuiInspectorGroup()
 }
 
 //////////////////////////////////////////////////////////////////////////
-// Persistence 
-//////////////////////////////////////////////////////////////////////////
-void GuiInspectorGroup::initPersistFields()
-{
-   Parent::initPersistFields();
-
-   addField("Caption", TypeString, Offset(mCaption, GuiInspectorGroup));
-}
-
-//////////////////////////////////////////////////////////////////////////
 // Scene Events
 //////////////////////////////////////////////////////////////////////////
 bool GuiInspectorGroup::onAdd()
@@ -895,7 +885,7 @@ void GuiInspectorDynamicGroup::clearFields()
 SimFieldDictionary::Entry* GuiInspectorDynamicGroup::findDynamicFieldInDictionary( StringTableEntry fieldName )
 {
    if( !mTarget )
-      return false;
+      return NULL;
 
    SimFieldDictionary * fieldDictionary = mTarget->getFieldDictionary();
 

@@ -20,10 +20,10 @@
 // IN THE SOFTWARE.
 //-----------------------------------------------------------------------------
 
-#include "2d/sceneobject/particlePlayer.h"
+#include "2d/sceneobject/ParticlePlayer.h"
 
 // Script bindings.
-#include "2d/sceneobject/particlePlayer_ScriptBinding.h"
+#include "2d/sceneobject/ParticlePlayer_ScriptBinding.h"
 
 
 //------------------------------------------------------------------------------
@@ -54,6 +54,9 @@ void ParticlePlayer::EmitterNode::freeParticle( ParticleSystem::ParticleNode* pP
 {
     // Sanity!
     AssertFatal( mOwner != NULL, "ParticlePlayer::EmitterNode::freeParticle() - Cannot free a particle with a NULL owner." );
+
+    // Deallocate the assets.
+    pParticleNode->mFrameProvider.deallocateAssets();
 
     // Remove the node from the emitter chain.
     pParticleNode->mPreviousNode->mNextNode = pParticleNode->mNextNode;
@@ -97,7 +100,8 @@ ParticlePlayer::ParticlePlayer() :
     mEmissionRateScale = Con::getFloatVariable( PARTICLE_PLAYER_EMISSION_RATE_SCALE, 1.0f );
     mSizeScale         = Con::getFloatVariable( PARTICLE_PLAYER_SIZE_SCALE, 1.0f );
     mForceScale        = Con::getFloatVariable( PARTICLE_PLAYER_FORCE_SCALE, 1.0f );
-
+    mTimeScale         = Con::getFloatVariable( PARTICLE_PLAYER_TIME_SCALE, 1.0f );
+     
     // Register for refresh notifications.
     mParticleAsset.registerRefreshNotify( this );
 }
@@ -123,6 +127,7 @@ void ParticlePlayer::initPersistFields()
     addProtectedField( "EmissionRateScale", TypeF32, Offset(mEmissionRateScale, ParticlePlayer), &defaultProtectedSetFn, &defaultProtectedGetFn, &writeEmissionRateScale, "" );
     addProtectedField( "SizeScale", TypeF32, Offset(mSizeScale, ParticlePlayer), &defaultProtectedSetFn, &defaultProtectedGetFn, &writeSizeScale, "" );
     addProtectedField( "ForceScale", TypeF32, Offset(mForceScale, ParticlePlayer), &defaultProtectedSetFn, &defaultProtectedGetFn, &writeForceScale, "" );
+    addProtectedField( "TimeScale", TypeF32, Offset(mTimeScale, ParticlePlayer), &defaultProtectedSetFn, &defaultProtectedGetFn, &writeTimeScale, "" );
 }
 
 //------------------------------------------------------------------------------
@@ -145,6 +150,7 @@ void ParticlePlayer::copyTo(SimObject* object)
    pParticlePlayer->setEmissionRateScale( getEmissionRateScale() );
    pParticlePlayer->setSizeScale( getSizeScale() );
    pParticlePlayer->setForceScale( getForceScale() );
+   pParticlePlayer->setTimeScale( getTimeScale() );
 }
 
 //------------------------------------------------------------------------------
@@ -265,6 +271,9 @@ void ParticlePlayer::integrateObject( const F32 totalTime, const F32 elapsedTime
             mEmitters.size() == 0 )
         return;
 
+    // Calculate scaled time.
+    const F32 scaledTime = elapsedTime * mTimeScale;
+
     // Fetch particle asset.
     ParticleAsset* pParticleAsset = mParticleAsset;
 
@@ -279,7 +288,7 @@ void ParticlePlayer::integrateObject( const F32 totalTime, const F32 elapsedTime
     if ( !mCameraIdle )
     {
         // No, so update the particle player age.
-        mAge += elapsedTime;
+        mAge += scaledTime;
 
         // Iterate the emitters.
         for( typeEmitterVector::iterator emitterItr = mEmitters.begin(); emitterItr != mEmitters.end(); ++emitterItr )
@@ -300,7 +309,7 @@ void ParticlePlayer::integrateObject( const F32 totalTime, const F32 elapsedTime
             while ( pParticleNode != pParticleNodeHead )
             {
                 // Update the particle age.
-                pParticleNode->mParticleAge += elapsedTime;
+                pParticleNode->mParticleAge += scaledTime;
 
                 // Has the particle expired?
                 // NOTE:-   If we're in single-particle mode then the particle lives as long as the particle player does.
@@ -317,7 +326,7 @@ void ParticlePlayer::integrateObject( const F32 totalTime, const F32 elapsedTime
                 else
                 {
                     // No, so integrate the particle.
-                    integrateParticle( pEmitterNode, pParticleNode, pParticleNode->mParticleAge / pParticleNode->mParticleLifetime, elapsedTime );
+                    integrateParticle( pEmitterNode, pParticleNode, pParticleNode->mParticleAge / pParticleNode->mParticleLifetime, scaledTime );
 
                     // Move to the next particle node.
                     pParticleNode = pParticleNode->mNextNode;
@@ -347,7 +356,7 @@ void ParticlePlayer::integrateObject( const F32 totalTime, const F32 elapsedTime
                 //
                 // NOTE:    We need to do this if there's an emission target but the time-integration is so small
                 //          that rounding results in no emission.  Downside to good FPS!
-                pEmitterNode->setTimeSinceLastGeneration( pEmitterNode->getTimeSinceLastGeneration() + elapsedTime );
+                pEmitterNode->setTimeSinceLastGeneration( pEmitterNode->getTimeSinceLastGeneration() + scaledTime );
 
                 // Fetch the particle player age.
                 const F32 particlePlayerAge = mAge;
@@ -392,10 +401,6 @@ void ParticlePlayer::integrateObject( const F32 totalTime, const F32 elapsedTime
     // Fetch the particle life-mode.
     const ParticleAsset::LifeMode lifeMode = pParticleAsset->getLifeMode();
 
-    // Finish if the particle player is in "infinite" mode.
-    if ( lifeMode == ParticleAsset::INFINITE )
-        return;
-
     // Are we waiting for particles and there are non left?
     if ( mWaitingForParticles )
     {
@@ -408,6 +413,10 @@ void ParticlePlayer::integrateObject( const F32 totalTime, const F32 elapsedTime
 
         return;
     }
+
+    // Finish if the particle player is in "infinite" mode.
+    if ( lifeMode == ParticleAsset::INFINITE )
+        return;
 
     // Fetch the particle lifetime.
     const F32 lifetime = pParticleAsset->getLifetime();
@@ -545,10 +554,10 @@ void ParticlePlayer::sceneRender( const SceneRenderState* pSceneRenderState, con
         const AssetPtr<AnimationAsset>& animationAsset = pParticleAssetEmitter->getAnimationAsset();
 
         // Fetch static mode.
-        const bool isStaticMode = pParticleAssetEmitter->isStaticMode();
+        const bool isStaticFrameProvider = pParticleAssetEmitter->isStaticFrameProvider();
 
         // Are we in static mode?
-        if ( isStaticMode )
+        if ( isStaticFrameProvider )
         {
             // Yes, so skip if no image available.
             if ( imageAsset.isNull() )
@@ -607,26 +616,6 @@ void ParticlePlayer::sceneRender( const SceneRenderState* pSceneRenderState, con
             }
         }
 
-        // Frame texture.
-        TextureHandle frameTexture;
-
-        // Frame area.
-        ImageAsset::FrameArea::TexelArea texelFrameArea;
-
-        // Are we in static mode?
-        if ( isStaticMode )
-        {
-            // Yes, so fetch the frame texture.
-            frameTexture = imageAsset->getImageTexture();
-
-            // Are we using a random image frame?
-            if ( !pParticleAssetEmitter->getRandomImageFrame() )
-            {
-                // No, so fetch frame area.
-                texelFrameArea = imageAsset->getImageFrameArea( pParticleAssetEmitter->getImageFrame() ).mTexelArea;
-            }
-        }
-
         // Fetch the oldest-in-front flag.
         const bool oldestInFront = pParticleAssetEmitter->getOldestInFront();
 
@@ -636,23 +625,17 @@ void ParticlePlayer::sceneRender( const SceneRenderState* pSceneRenderState, con
         // Fetch the particle node head.
         ParticleSystem::ParticleNode* pParticleNodeHead = pEmitterNode->getParticleNodeHead();
 
-        // Process All particle nodes.
+        // Process all particle nodes.
         while ( pParticleNode != pParticleNodeHead )
         {
-            // Are we in static mode are using a random image frame?
-            if ( isStaticMode && pParticleAssetEmitter->getRandomImageFrame() )
-            {
-                // Yes, so fetch frame area.
-                texelFrameArea = imageAsset->getImageFrameArea( pParticleNode->mImageFrame ).mTexelArea;
-            }
+            // Fetch the frame provider.
+            const ImageFrameProviderCore& frameProvider = pParticleNode->mFrameProvider;
 
-            // Are we using an animation?
-            if ( !isStaticMode )
-            {
-                // Yes, so fetch current frame area.
-                texelFrameArea = pParticleNode->mAnimationController.getCurrentImageFrameArea().mTexelArea;
-                frameTexture = pParticleNode->mAnimationController.getImageTexture();
-            }
+            // Fetch the frame area.
+            const ImageAsset::FrameArea::TexelArea& texelFrameArea = frameProvider.getProviderImageFrameArea().mTexelArea;
+
+            // Frame texture.
+            TextureHandle& frameTexture = frameProvider.getProviderTexture();
 
             // Fetch the particle render OOBB.
             Vector2* renderOOBB = pParticleNode->mRenderOOBB;
@@ -705,7 +688,7 @@ void ParticlePlayer::sceneRenderOverlay( const SceneRenderState* sceneRenderStat
         return;
 
     // Draw camera pause distance.
-    pScene->mDebugDraw.DrawCircle( getRenderPosition(), mCameraIdleDistance, b2Color(1.0f, 1.0f, 0.0f ) );
+    pScene->mDebugDraw.DrawCircle( getRenderPosition(), mCameraIdleDistance, ColorF(1.0f, 1.0f, 0.0f ) );
 }
 
 //-----------------------------------------------------------------------------
@@ -810,7 +793,8 @@ bool ParticlePlayer::play( const bool resetParticles )
     {
         // Fetch the emitter node.
         EmitterNode* pEmitterNode = *emitterItr;
-
+        pEmitterNode->setPaused(false);
+        
         // Reset the time since last generation.
         pEmitterNode->setTimeSinceLastGeneration( 0.0f );
     }
@@ -1268,8 +1252,14 @@ void ParticlePlayer::configureParticle( EmitterNode* pEmitterNode, ParticleSyste
     // Image, Frame and Animation Controller.
     // **********************************************************************************************************************
 
+    // Fetch the image frame provider.
+    ImageFrameProviderCore& frameProvider = pParticleNode->mFrameProvider;
+
+    // Allocate assets to the particle.
+    frameProvider.allocateAssets( &(pParticleAssetEmitter->getImageAsset()), &(pParticleAssetEmitter->getAnimationAsset()) );
+
     // Is the emitter in static mode?
-    if ( pParticleAssetEmitter->isStaticMode() )
+    if ( pParticleAssetEmitter->isStaticFrameProvider() )
     {
         // Yes, so is random image frame active?
         if ( pParticleAssetEmitter->getRandomImageFrame() )
@@ -1278,12 +1268,15 @@ void ParticlePlayer::configureParticle( EmitterNode* pEmitterNode, ParticleSyste
             const U32 frameCount = pParticleAssetEmitter->getImageAsset()->getFrameCount();
 
             // Choose a random frame.
-            pParticleNode->mImageFrame = (U32)CoreMath::mGetRandomI( 0, frameCount-1 );
+            frameProvider.setImageFrame( (U32)CoreMath::mGetRandomI( 0, frameCount-1 ) );
         }
         else
         {
             // No, so set the emitter image frame.
-            pParticleNode->mImageFrame = pParticleAssetEmitter->getImageFrame();
+            if (pParticleAssetEmitter->isUsingNamedImageFrame())
+                frameProvider.setNamedImageFrame( pParticleAssetEmitter->getNamedImageFrame() );
+            else
+                frameProvider.setImageFrame( pParticleAssetEmitter->getImageFrame() );
         }
     }
     else
@@ -1291,12 +1284,8 @@ void ParticlePlayer::configureParticle( EmitterNode* pEmitterNode, ParticleSyste
         // No, so fetch the animation asset.
         const AssetPtr<AnimationAsset>& animationAsset = pParticleAssetEmitter->getAnimationAsset();
 
-        // Is an animation available?
-        if ( animationAsset.notNull() )
-        {
-            // Yes, so play it.
-            pParticleNode->mAnimationController.playAnimation( animationAsset, false );
-        }
+        // Play it.
+        frameProvider.playAnimation( animationAsset );
     }
 
 
@@ -1401,10 +1390,10 @@ void ParticlePlayer::integrateParticle( EmitterNode* pEmitterNode, ParticleSyste
 
 
     // Is the emitter in static mode?
-    if ( !pParticleAssetEmitter->isStaticMode() )
+    if ( !pParticleAssetEmitter->isStaticFrameProvider() )
     {
         // No, so update animation.
-        pParticleNode->mAnimationController.updateAnimation( elapsedTime );
+        pParticleNode->mFrameProvider.updateAnimation( elapsedTime );
     }
 
 
@@ -1447,14 +1436,14 @@ void ParticlePlayer::integrateParticle( EmitterNode* pEmitterNode, ParticleSyste
     if ( pParticleAssetEmitter->getKeepAligned() && pParticleAssetEmitter->getOrientationType() == ParticleAssetEmitter::ALIGNED_ORIENTATION )
     {
         // Yes, so calculate last movement direction.
-        F32 movementAngle = mRadToDeg( mAtan( pParticleNode->mVelocity.x, -pParticleNode->mVelocity.y ) );
+        F32 movementAngle = mRadToDeg( mAtan( pParticleNode->mVelocity.x, pParticleNode->mVelocity.y ) );
 
         // Adjust for negative ArcTan quadrants.
         if ( movementAngle < 0.0f )
             movementAngle += 360.0f;
 
         // Set new Orientation Angle.
-        pParticleNode->mOrientationAngle = -movementAngle - pParticleAssetEmitter->getAlignedAngleOffset();
+        pParticleNode->mOrientationAngle = movementAngle - pParticleAssetEmitter->getAlignedAngleOffset();
 
     }
     else
@@ -1548,8 +1537,8 @@ void ParticlePlayer::initializeParticleAsset( void )
         const AssetPtr<AnimationAsset>& animationAsset = pParticleAssetEmitter->getAnimationAsset();
 
         // Skip if the emitter does not have a valid assigned asset to render.
-        if (( pParticleAssetEmitter->isStaticMode() && (imageAsset.isNull() || imageAsset->getFrameCount() == 0 ) ) ||
-            ( !pParticleAssetEmitter->isStaticMode() && (animationAsset.isNull() || animationAsset->getValidatedAnimationFrames().size() == 0 ) ) )
+        if (( pParticleAssetEmitter->isStaticFrameProvider() && (imageAsset.isNull() || imageAsset->getFrameCount() == 0 ) ) ||
+            ( !pParticleAssetEmitter->isStaticFrameProvider() && (animationAsset.isNull() || (animationAsset->getValidatedAnimationFrames().size() == 0 && animationAsset->getValidatedNamedAnimationFrames().size() == 0)) ) )
             continue;
 
         // Create a new emitter node.

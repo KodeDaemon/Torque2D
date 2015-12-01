@@ -39,6 +39,8 @@
 #include "memory/safeDelete.h"
 #include "io/bitStream.h"
 
+#include "message_ScriptBinding.h"
+
 //////////////////////////////////////////////////////////////////////////
 
 namespace Sim
@@ -53,32 +55,11 @@ extern SimIdDictionary *gIdDictionary;
 Message::Message()
 {
    mRefCount = 0;
-
-   mNSLinkMask = LinkSuperClassName | LinkClassName;
 }
 
 
 IMPLEMENT_CONOBJECT(Message);
 
-//////////////////////////////////////////////////////////////////////////
-
-bool Message::onAdd()
-{
-   if(! Parent::onAdd())
-      return false;
-
-   linkNamespaces();
-   Con::executef(this, 1, "onAdd");
-   return true;
-}
-
-void Message::onRemove()
-{
-   Con::executef(this, 1, "onRemove");
-   unlinkNamespaces();
-   
-   Parent::onRemove();
-}
 
 //////////////////////////////////////////////////////////////////////////
 // Public Methods
@@ -132,28 +113,4 @@ void Message::freeReference()
          delete this;
       return;
    }
-}
-
-//////////////////////////////////////////////////////////////////////////
-// Console Methods
-//////////////////////////////////////////////////////////////////////////
-
-ConsoleMethod(Message, getType, const char *, 2, 2, "() Get message type (script class name or C++ class name if no script defined class)"
-			  "@return The type as a string")
-{
-   return object->getType();
-}
-
-//////////////////////////////////////////////////////////////////////////
-
-ConsoleMethod(Message, addReference, void, 2, 2, "() Increment the reference count for this message\n"
-			  "@return No Return Value.")
-{
-   object->addReference();
-}
-
-ConsoleMethod(Message, freeReference, void, 2, 2, "() Decrement the reference count for this message\n"
-			  "@return No Return Value.")
-{
-   object->freeReference();
 }

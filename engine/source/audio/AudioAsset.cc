@@ -21,7 +21,7 @@
 //-----------------------------------------------------------------------------
 
 #ifndef _AUDIO_ASSET_H_
-#include "audioAsset.h"
+#include "AudioAsset.h"
 #endif
 
 #ifndef _ASSET_PTR_H_
@@ -120,6 +120,27 @@ void AudioAsset::initPersistFields()
    //addField("coneOutsideVolume", TypeF32,     Offset(mDescription.mConeOutsideVolume, AudioAsset));
    //addField("coneVector",        TypePoint3F, Offset(mDescription.mConeVector, AudioAsset));
    //addField("environmentLevel",  TypeF32,     Offset(mDescription.mEnvironmentLevel, AudioAsset));
+}
+
+//------------------------------------------------------------------------------
+
+void AudioAsset::copyTo(SimObject* object)
+{
+    // Call to parent.
+    Parent::copyTo(object);
+
+    // Cast to asset.
+    AudioAsset* pAsset = static_cast<AudioAsset*>(object);
+
+    // Sanity!
+    AssertFatal(pAsset != NULL, "AudioAsset::copyTo() - Object is not the correct type.");
+
+    // Copy state.
+    pAsset->setAudioFile( getAudioFile() );
+    pAsset->setVolume( getVolume() );
+    pAsset->setVolumeChannel( getVolumeChannel() );
+    pAsset->setLooping( getLooping() );
+    pAsset->setStreaming( getStreaming() );
 }
 
 //--------------------------------------------------------------------------

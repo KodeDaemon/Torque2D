@@ -50,6 +50,8 @@
 
 //-----------------------------------------------------------------------------
 
+/// @ingroup moduleGroup
+/// @see moduleGroup
 class ModuleManager : public SimObject
 {
 private:
@@ -151,6 +153,9 @@ public:
 
     /// Module discovery.
     bool scanModules( const char* pPath, const bool rootOnly = false );
+
+    /// Module unregister.
+    bool unregisterModule( const char* pModuleId, const U32 versionId );
 
     /// Module (un)loading.
     bool loadModuleGroup( const char* pModuleGroup );

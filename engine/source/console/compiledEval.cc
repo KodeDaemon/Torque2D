@@ -28,6 +28,7 @@
 #include "io/resource/resourceManager.h"
 
 #include "string/findMatch.h"
+#include "string/stringUnit.h"
 #include "console/consoleInternal.h"
 #include "io/fileStream.h"
 #include "console/compiler.h"
@@ -218,7 +219,7 @@ void CodeBlock::getFunctionArgs(char buffer[1024], U32 ip)
    buffer[0] = 0;
    for(U32 i = 0; i < fnArgc; i++)
    {
-      StringTableEntry var = U32toSTE(code[ip + i + 6]);
+      StringTableEntry var = CodeToSTE(code, ip + (i*2) + 6);
       
       // Add a comma so it looks nice!
       if(i != 0)
@@ -282,7 +283,7 @@ static void setUnit(const char *string, U32 index, const char *replace, const ch
          string += (sz + 1);
    }
    // copy first chunk
-   sz = string-start;
+   sz = (U32)(string-start);
    dStrncpy(val, start, sz);
    for(U32 i = 0; i < padCount; i++)
       val[sz++] = set[0];
@@ -301,73 +302,149 @@ static void setUnit(const char *string, U32 index, const char *replace, const ch
    return;
 }
 
-// Gets a component of an object's field value or a variable and returns it
-// in val.
-static void getFieldComponent( SimObject* object, StringTableEntry field, const char* array, StringTableEntry subField, char val[], S32 count )
-{
-   const char* prevVal = NULL;
-   // Grab value from object.
-   if( object && field )
-      prevVal = object->getDataField( field, array );
-   // Otherwise, grab from the string stack. The value coming in will always
-   // be a string because that is how multicomponent variables are handled.
-   else
-      prevVal = STR.getStringValue();
+//-----------------------------------------------------------------------------
 
-   // Make sure we got a value.
-   if( prevVal && *prevVal )
-   {
-      // 'x', 'y', and 'z' grab the 1st, 2nd, or 3rd component of the
-      // variable or field.
-      if( subField == StringTable->insert( "x" ) )
-         getUnit( prevVal, 0, " ", val, count );
-      else if( subField == StringTable->insert( "y" ) )
-         getUnit( prevVal, 1, " ", val, count );
-      else if( subField == StringTable->insert( "z" ) )
-         getUnit( prevVal, 2, " ", val, count );
-   }
+static bool isDigitsOnly( const char* pString )
+{
+    // Sanity.
+    AssertFatal( pString != NULL, "isDigits() - Cannot check a NULL string." );
+
+    const char* pDigitCursor = pString;
+    if ( *pDigitCursor == 0 )
+        return false;
+
+    // Check for digits only.
+    do
+    {
+        if ( dIsdigit( *pDigitCursor++ ) )
+            continue;
+
+        return false;
+    }
+    while( *pDigitCursor != 0 );
+
+    return true;
 }
+
+//-----------------------------------------------------------------------------
+
+static const StringTableEntry _xyzw[] = 
+{
+    StringTable->insert( "x" ),
+    StringTable->insert( "y" ),
+    StringTable->insert( "z" ),
+    StringTable->insert( "w" )
+};
+
+static const StringTableEntry _rgba[] = 
+{
+    StringTable->insert( "r" ),
+    StringTable->insert( "g" ),
+    StringTable->insert( "b" ),
+    StringTable->insert( "a" )
+};
+
+static const StringTableEntry _size[] = 
+{
+    StringTable->insert( "width" ),
+    StringTable->insert( "height" )
+};
+
+static const StringTableEntry _count = StringTable->insert( "count" );
+
+//-----------------------------------------------------------------------------
+
+// Gets a component of an object's field value or a variable and returns it in val.
+static void getFieldComponent( SimObject* object, StringTableEntry field, const char* array, StringTableEntry subField, char* val, const U32 bufferSize )
+{
+    const char* prevVal = NULL;
+   
+    // Grab value from object.
+    if( object && field )
+        prevVal = object->getDataField( field, array );
+   
+    // Otherwise, grab from the string stack. The value coming in will always
+    // be a string because that is how multi-component variables are handled.
+    else
+        prevVal = STR.getStringValue();
+
+    // Make sure we got a value.
+    if ( prevVal && *prevVal )
+    {
+        if ( subField == _count )
+            dSprintf( val, bufferSize, "%d", StringUnit::getUnitCount( prevVal, " \t\n" ) );
+
+        else if ( subField == _xyzw[0] || subField == _rgba[0] || subField == _size[0] )
+            dStrncpy( val, StringUnit::getUnit( prevVal, 0, " \t\n"), bufferSize );
+
+        else if ( subField == _xyzw[1] || subField == _rgba[1] || subField == _size[1] )
+            dStrncpy( val, StringUnit::getUnit( prevVal, 1, " \t\n"), bufferSize );
+
+        else if ( subField == _xyzw[2] || subField == _rgba[2] )
+            dStrncpy( val, StringUnit::getUnit( prevVal, 2, " \t\n"), bufferSize );
+
+        else if ( subField == _xyzw[3] || subField == _rgba[3] )
+            dStrncpy( val, StringUnit::getUnit( prevVal, 3, " \t\n"), bufferSize );
+
+        else if ( *subField == '_' && isDigitsOnly(subField+1) )
+            dStrncpy( val, StringUnit::getUnit( prevVal, dAtoi(subField+1), " \t\n"), bufferSize );
+
+        else
+            val[0] = 0;
+    }
+    else
+        val[0] = 0;
+}
+
+//-----------------------------------------------------------------------------
 
 // Sets a component of an object's field value based on the sub field. 'x' will
 // set the first field, 'y' the second, and 'z' the third.
 static void setFieldComponent( SimObject* object, StringTableEntry field, const char* array, StringTableEntry subField )
 {
-   char val[1024] = "";
-   const char* prevVal;
-   // Set the value on an object field.
-   if( object && field )
-      prevVal = object->getDataField( field, array );
+    // Copy the current string value
+    char strValue[1024];
+    dStrncpy( strValue, STR.getStringValue(), sizeof(strValue) );
 
-   // Set the value on a variable.
-   else if( gEvalState.currentVariable )
-      prevVal = gEvalState.getStringVariable();
+    char val[1024] = "";
+    const U32 bufferSize = sizeof(val);
+    const char* prevVal = NULL;
 
-   // Insert the value into the specified component of the string.
-   bool set = false;
-   if( subField == StringTable->insert( "x" ) )
-   {
-      setUnit( prevVal, 0, STR.getStringValue(), " ", val, 1024 );
-      set = true;
-   }
-   else if( subField == StringTable->insert( "y" ) )
-   {
-      setUnit( prevVal, 1, STR.getStringValue(), " ", val, 1024 );
-      set = true;
-   }
-   else if( subField == StringTable->insert( "z" ) )
-   {
-      setUnit( prevVal, 2, STR.getStringValue(), " ", val, 1024 );
-      set = true;
-   }
+    // Set the value on an object field.
+    if( object && field )
+        prevVal = object->getDataField( field, array );
 
-   if( set )
-   {
-      // Update the field or variable.
-      if( object && field )
-         object->setDataField( field, array, val );
-      else if( gEvalState.currentVariable )
-         gEvalState.setStringVariable( val );
-   }
+    // Set the value on a variable.
+    else if( gEvalState.currentVariable )
+        prevVal = gEvalState.getStringVariable();
+
+    // Ensure that the variable has a value
+    if (!prevVal)
+        return;
+
+    if ( subField == _xyzw[0] || subField == _rgba[0] || subField == _size[0] )
+        dStrncpy( val, StringUnit::setUnit( prevVal, 0, strValue, " \t\n"), bufferSize );
+
+    else if ( subField == _xyzw[1] || subField == _rgba[1] || subField == _size[1] )
+        dStrncpy( val, StringUnit::setUnit( prevVal, 1, strValue, " \t\n"), bufferSize );
+
+    else if ( subField == _xyzw[2] || subField == _rgba[2] )
+        dStrncpy( val, StringUnit::setUnit( prevVal, 2, strValue, " \t\n"), bufferSize );
+
+    else if ( subField == _xyzw[3] || subField == _rgba[3] )
+        dStrncpy( val, StringUnit::setUnit( prevVal, 3, strValue, " \t\n"), bufferSize );
+
+    else if ( *subField == '_' && isDigitsOnly(subField+1) )
+        dStrncpy( val, StringUnit::setUnit( prevVal, dAtoi(subField+1), strValue, " \t\n"), bufferSize );
+
+    if ( val[0] != 0 )
+    {
+        // Update the field or variable.
+        if( object && field )
+            object->setDataField( field, 0, val );
+        else if( gEvalState.currentVariable )
+            gEvalState.setStringVariable( val );
+    }
 }
 
 const char *CodeBlock::exec(U32 ip, const char *functionName, Namespace *thisNamespace, U32 argc, const char **argv, bool noCalls, StringTableEntry packageName, S32 setFrame)
@@ -388,8 +465,8 @@ const char *CodeBlock::exec(U32 ip, const char *functionName, Namespace *thisNam
    if(argv)
    {
       // assume this points into a function decl:
-      U32 fnArgc = code[ip + 5];
-      thisFunctionName = U32toSTE(code[ip]);
+      U32 fnArgc = code[ip + 2 + 6];
+      thisFunctionName = CodeToSTE(code, ip);
       argc = getMin(argc-1, fnArgc); // argv[0] is func name
       if(gEvalState.traceOn)
       {
@@ -424,11 +501,11 @@ const char *CodeBlock::exec(U32 ip, const char *functionName, Namespace *thisNam
       popFrame = true;
       for(i = 0; i < argc; i++)
       {
-         StringTableEntry var = U32toSTE(code[ip + i + 6]);
+         StringTableEntry var = CodeToSTE(code, ip + (2 + 6 + 1) + (i * 2));
          gEvalState.setCurVarNameCreate(var);
          gEvalState.setStringVariable(argv[i+1]);
       }
-      ip = ip + fnArgc + 6;
+      ip = ip + (fnArgc * 2) + (2 + 6 + 1);
       curFloatTable = functionFloats;
       curStringTable = functionStrings;
    }
@@ -512,10 +589,10 @@ breakContinue:
          case OP_FUNC_DECL:
             if(!noCalls)
             {
-               fnName       = U32toSTE(code[ip]);
-               fnNamespace  = U32toSTE(code[ip+1]);
-               fnPackage    = U32toSTE(code[ip+2]);
-               bool hasBody = bool(code[ip+3]);
+               fnName       = CodeToSTE(code, ip);
+               fnNamespace  = CodeToSTE(code, ip+2);
+               fnPackage    = CodeToSTE(code, ip+4);
+               bool hasBody = bool(code[ip+6]);
                
                Namespace::unlinkPackages();
                ns = Namespace::find(fnNamespace, fnPackage);
@@ -538,17 +615,17 @@ breakContinue:
 
                //Con::printf("Adding function %s::%s (%d)", fnNamespace, fnName, ip);
             }
-            ip = code[ip + 4];
+            ip = code[ip + 7];
             break;
 
          case OP_CREATE_OBJECT:
          {
             // Read some useful info.
-            objParent        = U32toSTE(code[ip    ]);
-            bool isDataBlock =          code[ip + 1];
-            bool isInternal  =          code[ip + 2];
-            bool isMessage   =          code[ip + 3];
-            failJump         =          code[ip + 4];
+            objParent        = CodeToSTE(code, ip);
+            bool isDataBlock =          code[ip + 2];
+            bool isInternal  =          code[ip + 3];
+            bool isMessage   =          code[ip + 4];
+            failJump         =          code[ip + 5];
             
             // If we don't allow calls, we certainly don't allow creating objects!
             // Moved this to after failJump is set. Engine was crashing when
@@ -701,7 +778,7 @@ breakContinue:
             }
 
             // Advance the IP past the create info...
-            ip += 5;
+            ip += 6;
             break;
          }
 
@@ -1004,8 +1081,8 @@ breakContinue:
             break;
 
          case OP_SETCURVAR:
-            var = U32toSTE(code[ip]);
-            ip++;
+            var = CodeToSTE(code, ip);
+            ip += 2;
 
             // If a variable is set, then these must be NULL. It is necessary
             // to set this here so that the vector parser can appropriately
@@ -1024,8 +1101,8 @@ breakContinue:
             break;
 
          case OP_SETCURVAR_CREATE:
-            var = U32toSTE(code[ip]);
-            ip++;
+            var = CodeToSTE(code, ip);
+            ip += 2;
 
             // See OP_SETCURVAR
             prevField = NULL;
@@ -1144,9 +1221,9 @@ breakContinue:
             // Save the previous field for parsing vector fields.
             prevField = curField;
             dStrcpy( prevFieldArray, curFieldArray );
-            curField = U32toSTE(code[ip]);
+            curField = CodeToSTE(code, ip);
             curFieldArray[0] = 0;
-            ip++;
+            ip += 2;
             break;
 
          case OP_SETCURFIELD_ARRAY:
@@ -1160,6 +1237,7 @@ breakContinue:
             {
                // The field is not being retrieved from an object. Maybe it's
                // a special accessor?
+
                getFieldComponent( prevObject, prevField, prevFieldArray, curField, valBuffer, VAL_BUFFER_SIZE );
                intStack[UINT+1] = dAtoi( valBuffer );
             }
@@ -1332,20 +1410,21 @@ breakContinue:
             break;
 
          case OP_LOADIMMED_IDENT:
-            STR.setStringValue(U32toSTE(code[ip++]));
+            STR.setStringValue(CodeToSTE(code, ip));
+            ip += 2;
             break;
 
          case OP_CALLFUNC_RESOLVE:
             // This deals with a function that is potentially living in a namespace.
-            fnNamespace = U32toSTE(code[ip+1]);
-            fnName      = U32toSTE(code[ip]);
+            fnNamespace = CodeToSTE(code, ip+2);
+            fnName      = CodeToSTE(code, ip);
 
             // Try to look it up.
             ns = Namespace::find(fnNamespace);
             nsEntry = ns->lookup(fnName);
             if(!nsEntry)
             {
-               ip+= 3;
+               ip+= 5;
                Con::warnf(ConsoleLogEntry::General,
                   "%s: Unable to find function %s%s%s",
                   getFileLine(ip-4), fnNamespace ? fnNamespace : "",
@@ -1355,7 +1434,11 @@ breakContinue:
             }
             // Now, rewrite our code a bit (ie, avoid future lookups) and fall
             // through to OP_CALLFUNC
-            code[ip+1] = *((U32 *) &nsEntry);
+#ifdef TORQUE_64
+            *((U64*)(code+ip+2)) = ((U64)nsEntry);
+#else
+            code[ip+2] = ((U32)nsEntry);
+#endif
             code[ip-1] = OP_CALLFUNC;
 
          case OP_CALLFUNC:
@@ -1366,7 +1449,7 @@ breakContinue:
             // or just on the object.
             S32 routingId = 0;
 
-            fnName = U32toSTE(code[ip]);
+            fnName = CodeToSTE(code, ip);
 
             //if this is called from inside a function, append the ip and codeptr
             if (!gEvalState.stack.empty())
@@ -1375,14 +1458,18 @@ breakContinue:
                gEvalState.stack.last()->ip = ip - 1;
             }
 
-            U32 callType = code[ip+2];
+            U32 callType = code[ip+4];
 
-            ip += 3;
+            ip += 5;
             STR.getArgcArgv(fnName, &callArgc, &callArgv);
 
             if(callType == FuncCallExprNode::FunctionCall) 
             {
-               nsEntry = *((Namespace::Entry **) &code[ip-2]);
+#ifdef TORQUE_64
+               nsEntry = ((Namespace::Entry *) *((U64*)(code+ip-3)));
+#else
+               nsEntry = ((Namespace::Entry *) *(code+ip-3));
+#endif
                ns = NULL;
             }
             else if(callType == FuncCallExprNode::MethodCall)
@@ -1392,7 +1479,7 @@ breakContinue:
                if(!gEvalState.thisObject)
                {
                   gEvalState.thisObject = 0;
-                  Con::warnf(ConsoleLogEntry::General,"%s: Unable to find object: '%s' attempting to call function '%s'", getFileLine(ip-4), callArgv[1], fnName);
+                  Con::warnf(ConsoleLogEntry::General,"%s: Unable to find object: '%s' attempting to call function '%s'", getFileLine(ip-6), callArgv[1], fnName);
                   
                   STR.popFrame(); // [neo, 5/7/2007 - #2974]
 
@@ -1449,7 +1536,7 @@ breakContinue:
             {
                if(!noCalls && !( routingId == MethodOnComponent ) )
                {
-                  Con::warnf(ConsoleLogEntry::General,"%s: Unknown command %s.", getFileLine(ip-4), fnName);
+                  Con::warnf(ConsoleLogEntry::General,"%s: Unknown command %s.", getFileLine(ip-6), fnName);
                   if(callType == FuncCallExprNode::MethodCall)
                   {
                      Con::warnf(ConsoleLogEntry::General, "  Object %s(%d) %s",
@@ -1475,7 +1562,7 @@ breakContinue:
                const char* nsName = ns? ns->mName: "";
                if((nsEntry->mMinArgs && S32(callArgc) < nsEntry->mMinArgs) || (nsEntry->mMaxArgs && S32(callArgc) > nsEntry->mMaxArgs))
                {
-                  Con::warnf(ConsoleLogEntry::Script, "%s: %s::%s - wrong number of arguments.", getFileLine(ip-4), nsName, fnName);
+                  Con::warnf(ConsoleLogEntry::Script, "%s: %s::%s - wrong number of arguments.", getFileLine(ip-6), nsName, fnName);
                   Con::warnf(ConsoleLogEntry::Script, "%s: usage: %s", getFileLine(ip-4), nsEntry->mUsage);
                   STR.popFrame();
                }
@@ -1540,7 +1627,7 @@ breakContinue:
                      case Namespace::Entry::VoidCallbackType:
                         nsEntry->cb.mVoidCallbackFunc(gEvalState.thisObject, callArgc, callArgv);
                         if(code[ip] != OP_STR_TO_NONE)
-                           Con::warnf(ConsoleLogEntry::General, "%s: Call to %s in %s uses result of void function call.", getFileLine(ip-4), fnName, functionName);
+                           Con::warnf(ConsoleLogEntry::General, "%s: Call to %s in %s uses result of void function call.", getFileLine(ip-6), fnName, functionName);
                         
                         STR.popFrame();
                         STR.setStringValue("");

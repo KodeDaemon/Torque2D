@@ -74,18 +74,15 @@ function CompositeSpriteToy::createCustomLayout( %this )
 
 function CompositeSprite::onCustomLayout( %this, %args )
 {
-    // Fetch the argument count.
-    %argCount = getWordCount(%args);
-    
     // Finish if there are no arguments passed.
-    if ( %argCount == 0 )
+    if ( %args.Count == 0 )
         return;
 
     // Fetch the first argument.    
-    %inputX = getWord( %args, 0 );
+    %inputX = %args._0;
     
     // Calculate an angle from the first argument.
-    %angle = mDegToRad( %inputX * 10 );
+    %angle = %inputX * 10;
     
     // Calculate an interesting output position.
     %outputX = %inputX - (CompositeSpriteToy.SpriteCount * 0.5);

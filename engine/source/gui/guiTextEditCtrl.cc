@@ -97,7 +97,6 @@ void GuiTextEditCtrl::initPersistFields()
    addField("validate",          TypeString,    Offset(mValidateCommand,   GuiTextEditCtrl));
    addField("escapeCommand",     TypeString,    Offset(mEscapeCommand,     GuiTextEditCtrl));
    addField("historySize",       TypeS32,       Offset(mHistorySize,       GuiTextEditCtrl));
-   addField("password",          TypeBool,      Offset(mPasswordText,      GuiTextEditCtrl));     
    addField("tabComplete",       TypeBool,      Offset(mTabComplete,       GuiTextEditCtrl));     
    addField("deniedSound",       TypeAudioAssetPtr, Offset(mDeniedSound, GuiTextEditCtrl));
    addField("sinkAllKeyEvents",  TypeBool,      Offset(mSinkAllKeyEvents,  GuiTextEditCtrl));
@@ -711,7 +710,6 @@ bool GuiTextEditCtrl::onKeyDown(const GuiEvent &event)
          }
 
          // End added UNIX emacs key bindings
-         
 #if !(defined(TORQUE_OS_OSX) || defined(TORQUE_OS_IOS))
          // windows style cut / copy / paste / undo keybinds
          case KEY_C:
@@ -1078,7 +1076,7 @@ void GuiTextEditCtrl::setFirstResponder()
 {
    Parent::setFirstResponder();
    
-#ifndef TORQUE_OS_IOS
+#if !defined(TORQUE_OS_IOS) && !defined(TORQUE_OS_ANDROID)
    Platform::enableKeyboardTranslation();
 #endif	
 }

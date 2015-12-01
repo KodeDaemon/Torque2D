@@ -22,6 +22,8 @@
 
 #include "component/dynamicConsoleMethodComponent.h"
 
+#include "dynamicConsoleMethodComponent_ScriptBinding.h"
+
 IMPLEMENT_CONOBJECT(DynamicConsoleMethodComponent);
 
 //-----------------------------------------------------------
@@ -134,8 +136,6 @@ const char *DynamicConsoleMethodComponent::callOnBehaviors( U32 argc, const char
    pThis = dynamic_cast<SimObject *>( this );
    AssertFatal( pThis, "DynamicConsoleMethodComponent::callOnBehaviors : this should always exist!" );
 
-   const char *cbName = StringTable->insert(argv[0]);
-
    const char* result = "";
    bool handled = false;
 
@@ -144,7 +144,7 @@ const char *DynamicConsoleMethodComponent::callOnBehaviors( U32 argc, const char
       VectorPtr<SimComponent *>&componentList = lockComponentList();
       for( SimComponentIterator nItr = (componentList.end()-1);  nItr >= componentList.begin(); nItr-- )
       {
-         argv[0] = cbName;
+         argv[0] = StringTable->insert(argv[0]);
 
          SimComponent *pComponent = (*nItr);
          AssertFatal( pComponent, "DynamicConsoleMethodComponent::callOnBehaviors - NULL component in list!" );
@@ -163,22 +163,3 @@ const char *DynamicConsoleMethodComponent::callOnBehaviors( U32 argc, const char
 
    return result;
 }
-
-ConsoleMethod( DynamicConsoleMethodComponent, callOnBehaviors, const char*, 3, 64 , 
-   "(methodName, argi) Calls script defined method on first behavior that defines it.\n"
-   "Example: %obj.callOnBehaviors( %methodName, %arg1, %arg2, ... );\n"
-   "@param methodName The method's name as a string\n"
-   "@param argi Any arguments to pass to the method\n"
-   "@return Any returned value from the behavior that handles the method, or the string 'ERR_CALL_NOT_HANDLED' if "
-   "no behavior can handle the method.\n" )
-
-{
-   // Put this in the correct form of: [method, caller, args...]
-   // We do this by just copying the third argument (the method we want to call)
-   // over the second (originally the caller ID).
-   argv[1] = argv[2];
-   return object->callOnBehaviors( argc - 1, argv + 1 );
-}
-
-//////////////////////////////////////////////////////////////////////////
-

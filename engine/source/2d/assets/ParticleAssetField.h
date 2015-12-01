@@ -103,14 +103,16 @@ public:
     F32 getDataKeyTime( const U32 index ) const;
     inline U32 getDataKeyCount( void ) const { return (U32)mDataKeys.size(); }
     const DataKey& getDataKey( const U32 index ) const;
-    inline F32 getFieldValue( F32 time ) const;
+    F32 getFieldValue( F32 time ) const;
 
     static F32 calculateFieldBV( const ParticleAssetField& base, const ParticleAssetField& variation, const F32 effectAge, const bool modulate = false, const F32 modulo = 0.0f );
     static F32 calculateFieldBVE( const ParticleAssetField& base, const ParticleAssetField& variation, const ParticleAssetField& effect, const F32 effectAge, const bool modulate = false, const F32 modulo = 0.0f );
     static F32 calculateFieldBVLE( const ParticleAssetField& base, const ParticleAssetField& variation, const ParticleAssetField& overlife, const ParticleAssetField& effect, const F32 effectTime, const F32 particleAge, const bool modulate = false, const F32 modulo = 0.0f );
 
-    void onTamlCustomWrite( TamlCustomProperty* pCustomProperty  );
-    void onTamlCustomRead( const TamlPropertyAlias* pPropertyAlias );
+    void onTamlCustomWrite( TamlCustomNode* pCustomNode  );
+    void onTamlCustomRead( const TamlCustomNode* pCustomNode );
+
+    void WriteCustomTamlSchema( const AbstractClassRep* pClassRep, TiXmlElement* pParentElement );
 };
 
 //-----------------------------------------------------------------------------

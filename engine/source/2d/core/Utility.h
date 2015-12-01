@@ -39,7 +39,6 @@
 #include "math/mMath.h"
 #endif
 
-
 //-----------------------------------------------------------------------------
 // Miscellaneous Defines.
 //-----------------------------------------------------------------------------
@@ -47,24 +46,23 @@
 #define MASK_ALL                        (U32_MAX)
 #define MASK_BITCOUNT                   (32)
 #define DEBUG_MODE_COUNT                (8)
-
 #define MAX_LAYERS_SUPPORTED            (32)
-
-#define MAX_CONTACTPOINTS_SUPPORTED     (1024)
-
 #define CANNOT_RENDER_PROXY_NAME        "CannotRenderProxy"
 #define b2_pi2                          (b2_pi * 2.0f)
 
 //-----------------------------------------------------------------------------
 
-class Scene; // Yuk!
 class SceneObject;
 struct Vector2;
 
-//-----------------------------------------------------------------------------
-
 typedef Vector<SceneObject*> typeSceneObjectVector;
 typedef const Vector<SceneObject*>& typeSceneObjectVectorConstRef;
+
+///-----------------------------------------------------------------------------
+
+DefineConsoleType( Typeb2AABB )
+
+//-----------------------------------------------------------------------------
 
 namespace Utility
 {
@@ -82,6 +80,8 @@ Vector2 mGetStringElementVector( const char* inString, const U32 index = 0 );
 VectorF mGetStringElementVector3D( const char* inString, const U32 index = 0 );
 const char* mGetStringElement( const char* inString, const U32 index, const bool copyBuffer = true );
 U32 mGetStringElementCount( const char *string );
+U32 mConvertStringToMask( const char* string );
+const char* mConvertMaskToString( const U32 mask );
 
 } // Namespace Utility.
 

@@ -23,16 +23,8 @@
 #ifndef _SPRITE_BATCH_ITEM_H_
 #define _SPRITE_BATCH_ITEM_H_
 
-#ifndef _SPRITE_PROXY_BASE_H_
-#include "2d/core/SpriteProxyBase.h"
-#endif
-
-#ifndef _SIM_OBJECT_PTR_H_
-#include "sim/simObjectPtr.h"
-#endif
-
-#ifndef _FACTORY_CACHE_H_
-#include "memory/factoryCache.h"
+#ifndef _IMAGE_FRAME_PROVIDER_H
+#include "2d/core/ImageFrameProvider.h"
 #endif
 
 //------------------------------------------------------------------------------  
@@ -42,11 +34,15 @@ class SceneRenderRequest;
 
 //------------------------------------------------------------------------------  
 
-class SpriteBatchItem : public SpriteProxyBase
+extern StringTableEntry spritesItemTypeName;
+
+//------------------------------------------------------------------------------  
+
+class SpriteBatchItem : public ImageFrameProvider
 {
     friend class SpriteBatch;
 
-    typedef SpriteProxyBase Parent;
+    typedef ImageFrameProvider Parent;
 
 public:
     // Represents a logical position.
@@ -142,7 +138,11 @@ public:
         // This should be as unique as possible as it is used for hashing.
         operator const U32() const
         {
+#ifdef TORQUE_64
+            return (U32)((U64)(mArgString) * (U32)2654435761);
+#else
             return (U32)(mArgString) * (U32)2654435761;
+#endif
         }
 
         /// Value equality check for hashing.
@@ -195,8 +195,10 @@ protected:
     LogicalPosition     mLogicalPosition;
 
     bool                mVisible;
+    bool                mExplicitMode;
 
     Vector2             mLocalPosition;
+    Vector2             mExplicitVerts[4];
     F32                 mLocalAngle;
     Vector2             mSize;
     F32                 mDepth;
@@ -223,6 +225,10 @@ protected:
     Vector2             mRenderPosition;
     U32                 mLastBatchTransformId;
 
+    U32                 mSpriteBatchQueryKey;
+
+    void*               mUserData;
+
 public:
     SpriteBatchItem();
     virtual ~SpriteBatchItem();
@@ -240,8 +246,13 @@ public:
     inline void setVisible( const bool visible ) { mVisible = visible; }
     inline bool getVisible( void ) const { return mVisible; }
 
+    inline void setExplicitMode( const bool explicitMode ) { mExplicitMode = explicitMode; }
+    inline bool getExplicitMode( void ) const { return mExplicitMode; }
+
     inline void setLocalPosition( const Vector2& localPosition ) { mLocalPosition = localPosition; mLocalTransformDirty = true; }
     inline Vector2 getLocalPosition( void ) const { return mLocalPosition; }
+
+    void setExplicitVertices( const Vector2* explicitVertices );
 
     inline void setLocalAngle( const F32 localAngle ) { mLocalAngle = localAngle; mLocalTransformDirty = true; }
     inline F32 getLocalAngle( void ) const { return mLocalAngle; }
@@ -282,10 +293,22 @@ public:
     inline void setDataObject( SimObject* pDataObject ) { mDataObject = pDataObject; }
     inline SimObject* getDataObject( void ) const { return mDataObject; }
 
+    inline void setUserData( void* pUserData ) { mUserData = pUserData; }
+    inline void* getUserData( void ) const { return mUserData; }
+    template<class T> T* getUserData( void ) const { return (T*)mUserData; }
+
+    inline void setSpriteBatchQueryKey( const U32 key ) { mSpriteBatchQueryKey = key; }
+    inline U32  getSpriteBatchQueryKey( void ) const { return mSpriteBatchQueryKey; }
+
     virtual void copyTo( SpriteBatchItem* pSpriteBatchItem ) const;
+
+    inline const Vector2* getLocalOOBB( void ) const { return mLocalOOBB; }
+    inline const Vector2* getRenderOOBB( void ) const { return mRenderOOBB; }
 
     void prepareRender( SceneRenderRequest* pSceneRenderRequest, const U32 batchTransformId );
     void render( BatchRender* pBatchRenderer, const SceneRenderRequest* pSceneRenderRequest, const U32 batchTransformId );
+
+    static void WriteCustomTamlSchema( const AbstractClassRep* pClassRep, TiXmlElement* pParentElement );
 
 protected:
     void setBatchParent( SpriteBatch* pSpriteBatch, const U32 batchId );
@@ -294,8 +317,8 @@ protected:
     void updateLocalTransform( void );
     void updateWorldTransform( const U32 batchTransformId );
 
-    void onTamlCustomWrite( TamlPropertyAlias* pSpriteAlias );
-    void onTamlCustomRead( const TamlPropertyAlias* pSpriteAlias );
+    void onTamlCustomWrite( TamlCustomNode* pParentNode );
+    void onTamlCustomRead( const TamlCustomNode* pSpriteNode );
 };
 
 //------------------------------------------------------------------------------  

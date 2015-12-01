@@ -23,12 +23,18 @@
 #ifndef _TAML_CHILDREN_H_
 #define _TAML_CHILDREN_H_
 
+#ifndef _TORQUE_TYPES_H_
+#include "platform/types.h"
+#endif
+
 //-----------------------------------------------------------------------------
 
 class SimObject;
 
 //-----------------------------------------------------------------------------
 
+/// @ingroup tamlGroup
+/// @see tamlGroup
 class TamlChildren
 {
 public:

@@ -42,7 +42,7 @@ static const double kUpdateInterval = 0.2;
 
 - (id)init
 {
-    [super init];
+    if (!(self = [super init])) return nil;
     
     if(self != NULL)
     {
@@ -70,13 +70,6 @@ static const double kUpdateInterval = 0.2;
 }
 
 
-- (void)dealloc
-{
-    if( motionManager != NULL )
-        [motionManager release];
-    
-    [super dealloc];
-}
 
 double accelAxes[6];
 
@@ -179,7 +172,7 @@ void (^accelerometerHandler)(CMAccelerometerData*, NSError*) = ^(CMAccelerometer
             InputEvent event;
             
             event.deviceInst = 0;
-            event.fValue = userAcc[i];
+            event.fValues[0] = userAcc[i];
             event.deviceType = AccelerometerDeviceType;
             event.objType = accelAxes[i];
             event.objInst = i;
@@ -229,7 +222,7 @@ void (^motionHandler)(CMDeviceMotion*, NSError*) = ^(CMDeviceMotion *motionData,
             InputEvent event;
         
             event.deviceInst = 0;
-            event.fValue = userAcc[i];
+            event.fValues[0] = userAcc[i];
             event.deviceType = AccelerometerDeviceType;
             event.objType = accelAxes[i];
             event.objInst = i;
@@ -256,7 +249,7 @@ void (^motionHandler)(CMDeviceMotion*, NSError*) = ^(CMDeviceMotion *motionData,
             InputEvent event;
             
             event.deviceInst = 0;
-            event.fValue = gyroData[i];
+            event.fValues[0] = gyroData[i];
             event.deviceType = GyroscopeDeviceType;
             event.objType = gyroAxes[i];
             event.objInst = i;
@@ -274,7 +267,7 @@ void (^motionHandler)(CMDeviceMotion*, NSError*) = ^(CMDeviceMotion *motionData,
     if(motionManager.deviceMotionAvailable)
     {
         if(referenceAttitude == NULL)
-            referenceAttitude = [motionManager.deviceMotion.attitude retain];
+            referenceAttitude = motionManager.deviceMotion.attitude;
         
         [motionManager startDeviceMotionUpdatesToQueue:[NSOperationQueue currentQueue] withHandler:motionHandler];
     }
@@ -301,7 +294,7 @@ void (^motionHandler)(CMDeviceMotion*, NSError*) = ^(CMDeviceMotion *motionData,
 {
     if(motionManager.deviceMotionAvailable)
     {
-        referenceAttitude = [motionManager.deviceMotion.attitude retain];
+        referenceAttitude = motionManager.deviceMotion.attitude;
         return true;
     }
     
